@@ -38,16 +38,39 @@ if (tg) {
 const ADSGRAM_BLOCK_ID = "38966"; // <-- Updated to active blockId provided by developer
 
 let adController = null;
+let sdkLoadError = null;
 
-// Initialize AdsGram safely only if the SDK is loaded
-if (window.Adsgram) {
-  adController = window.Adsgram.init({ 
-    blockId: ADSGRAM_BLOCK_ID,
-    debug: false // Set to false in production to optimize performance
+// Query the SDK script tag to monitor load issues
+const sdkScriptTag = document.getElementById("adsgram-sdk");
+if (sdkScriptTag) {
+  sdkScriptTag.addEventListener("error", (e) => {
+    sdkLoadError = e;
+    console.error("AdsGram SDK Script failed to load. This is highly likely due to an active Ad-Blocker (like uBlock Origin, AdGuard), a blocked DNS, or a network failure.", e);
   });
-} else {
-  console.warn("AdsGram SDK script was not loaded. If running locally or with an ad blocker, the mock fallback will handle simulated playbacks.");
 }
+
+// Helper to get or initialize the ad controller on the fly (lazy-init)
+function getAdController() {
+  if (adController) return adController;
+  
+  if (window.Adsgram) {
+    try {
+      adController = window.Adsgram.init({ 
+        blockId: ADSGRAM_BLOCK_ID,
+        debug: false // Set to false in production to optimize performance
+      });
+      console.log("AdsGram SDK successfully initialized with block ID: " + ADSGRAM_BLOCK_ID);
+      return adController;
+    } catch (err) {
+      console.error("Failed to initialize AdsGram with block ID: " + ADSGRAM_BLOCK_ID, err);
+      return null;
+    }
+  }
+  return null;
+}
+
+// Initial attempt to initialize
+getAdController();
 
 // 3. QUIZ STATE & STATIC DATA
 const QUIZ_QUESTIONS = [
@@ -323,15 +346,32 @@ function triggerAdsGramAd(rewardType) {
 
   const originalBtnHtml = triggeringBtn ? triggeringBtn.innerHTML : "";
 
-  // 1. Explicitly check if AdsGram SDK is initialized
-  if (!window.Adsgram || !adController) {
-    const errorMsg = "AdsGram monetization SDK is not loaded. Please make sure you are online, have disabled any active Ad-Blockers, and have loaded the page inside Telegram with a valid Block ID (38966).";
+  // 1. Explicitly check if AdsGram SDK is initialized or initialize it on-demand
+  const controller = getAdController();
+
+  if (!window.Adsgram || !controller) {
+    console.error("AdsGram SDK is unavailable or failed initialization.");
     
-    // Custom friendly visual alert
+    // Check if there was an explicit script error
+    let specificCause = "Please check your network connection.";
+    if (sdkLoadError) {
+      specificCause = "The SDK script failed to load (likely blocked by an Ad-Blocker, privacy extension, or parental controls).";
+      console.error("AdsGram Load Error Details: The adsgram-adbox.js script was explicitly blocked or failed to load. Check browser network tab for blocked requests.", sdkLoadError);
+    } else if (!window.Adsgram) {
+      specificCause = "The 'window.Adsgram' object is undefined. Check if sad.adsgram.ai is blocked in your environment or if you are running offline.";
+      console.warn("AdsGram Reference Error: window.Adsgram is undefined. Please verify the script tag exists in index.html and is not blocked.");
+    } else {
+      specificCause = "The AdController failed to initialize with Block ID " + ADSGRAM_BLOCK_ID + ". Please check if the block ID is active and correctly configured.";
+      console.error("AdsGram Initialization Error: window.Adsgram is defined but init() returned null or threw an error for Block ID: " + ADSGRAM_BLOCK_ID);
+    }
+
+    const errorMsg = "Monetization SDK is not ready. " + specificCause + " Ensure you are online, have disabled any active Ad-Blockers, and are viewing the app in a supported environment (Telegram App is recommended).";
+    
+    // Fallback custom friendly UI visual alert
     showRewardModal("⚠️ Monetization Offline", errorMsg, "❌");
     
     if (tg && tg.showAlert) {
-      tg.showAlert("Monetization offline! Please disable your ad-blocker to watch rewarded videos.");
+      tg.showAlert("Monetization offline! " + specificCause);
     }
     return;
   }
@@ -339,14 +379,14 @@ function triggerAdsGramAd(rewardType) {
   // 2. Provide clear visual feedback when ad is loading
   if (triggeringBtn) {
     triggeringBtn.disabled = true;
-    triggeringBtn.innerHTML = `<span>⏳ Loading Sponsor Video...</span>`;
+    triggeringBtn.innerHTML = "<span>⏳ Loading Sponsor Video...</span>";
     triggeringBtn.style.opacity = "0.75";
   }
 
   // Trigger optional Telegram header loading spinner
   tg?.showProgress?.(); 
   
-  adController.show()
+  controller.show()
     .then((result) => {
       // PROMISE RESOLVED: Ad completed successfully
       tg?.hideProgress?.();
@@ -379,15 +419,15 @@ function triggerAdsGramAd(rewardType) {
       if (error) {
         if (typeof error === 'object') {
           if (error.description) {
-            friendlyError = `Ad Block Error: ${error.description} (Check if block 38966 is live)`;
+            friendlyError = "Ad Block Error: " + error.description + " (Check if block 38966 is live)";
           } else if (error.message) {
-            friendlyError = `Failed to load: ${error.message}`;
+            friendlyError = "Failed to load: " + error.message;
           }
         } else if (typeof error === 'string') {
-          if (error.toLowerCase().includes("user closed") || error.toLowerCase().includes("closed")) {
+          if (error.toLowerCase().indexOf("user closed") !== -1 || error.toLowerCase().indexOf("closed") !== -1) {
             friendlyError = "You closed the sponsor video before it finished! Please watch the full video to claim your reward.";
           } else {
-            friendlyError = `Sponsor feedback: ${error}`;
+            friendlyError = "Sponsor feedback: " + error;
           }
         }
       }
