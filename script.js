@@ -35,7 +35,7 @@ if (tg) {
  * - For sandbox testing outside Telegram or on desktop, AdsGram will load demo ads.
  * - Always use your valid live Block ID when launching on production inside Telegram.
  */
-const ADSGRAM_BLOCK_ID = "YOUR_BLOCK_ID_HERE"; // <-- REPLACE WITH YOUR REAL ADSGRAM BLOCK ID
+const ADSGRAM_BLOCK_ID = "38965"; // <-- REPLACE WITH YOUR REAL ADSGRAM BLOCK ID
 
 let adController = null;
 
